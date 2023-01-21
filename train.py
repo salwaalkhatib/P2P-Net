@@ -7,6 +7,8 @@ import torch
 import argparse
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.utils.data import ConcatDataset 
+from tqdm import tqdm
 
 from dataset import *
 from utils import *
@@ -27,10 +29,11 @@ def train():
     batch_size = args.batch_size
 
     ## Data
-    data_config = { "air": [100, "../Data/fgvc-aircraft-2013b"], 
-                    "car": [196, "../Data/stanford_cars"], 
-                    "dog": [120, "../Data/StanfordDogs"],
-                    "cub": [200, "../Data/CUB_200_2011"], 
+    data_config = {"air": [100, "/apps/local/shared/CV703/datasets/fgvc-aircraft-2013b"], 
+                    "car": [196, "/apps/local/shared/CV703/datasets/stanford_cars"], 
+                    "dog": [120, "/apps/local/shared/CV703/datasets/dog/"],
+                    "cub": [200, "/apps/local/shared/CV703/datasets/CUB/"], 
+                    "air+car": [296, "/apps/local/shared/CV703/datasets/fgvc-aircraft-2013b"],
                     }
     dataset_name = args.dataset_name
     classes_num, data_root = data_config[dataset_name]
@@ -46,8 +49,15 @@ def train():
     elif dataset_name == 'cub':
         trainset = CUB(root=data_root, is_train=True, data_len=None)
         testset = CUB(root=data_root, is_train=False, data_len=None)
+    elif dataset_name == 'air+car':
+        train_dataset_aircraft = CAR(root="/apps/local/shared/CV703/datasets/stanford_cars", is_train=True, data_len=None)
+        test_dataset_aircraft= CAR(root="/apps/local/shared/CV703/datasets/stanford_cars", is_train=False, data_len=None)
+        train_dataset_cars = AIR(root="/apps/local/shared/CV703/datasets/fgvc-aircraft-2013b", is_train=True, data_len=None)
+        test_dataset_cars = AIR(root="/apps/local/shared/CV703/datasets/fgvc-aircraft-2013b", is_train=False, data_len=None)
+        trainset = ConcatDataset([train_dataset_aircraft, train_dataset_cars])
+        testset =  ConcatDataset([test_dataset_aircraft, test_dataset_cars])
     num_workers = 16 if torch.cuda.is_available() else 0
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers,drop_last=False)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers,drop_last=False, pin_memory=True)
 
     ## Output
     topn = args.topn
@@ -77,7 +87,7 @@ def train():
         lr=args.lr, momentum=0.9, weight_decay=5e-4)
 
     max_val_acc = 0
-    for epoch in range(1, epochs+1):
+    for epoch in tqdm(range(1, epochs+1)):
         print('\nEpoch: %d' % epoch)
         # update learning rate
         optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch, epochs, args.lr)

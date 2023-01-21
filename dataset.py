@@ -98,7 +98,7 @@ class CAR():
         self.root = root
         self.is_train = is_train
 
-        data = sio.loadmat(os.path.join(root, 'Stanford_cars_annos.mat'))
+        data = sio.loadmat(os.path.join(root, 'cars_annos.mat'))
         annotations = data['annotations'].squeeze(0) # ('relative_im_path, 'bbox_x1', 'bbox_y1', 'bbox_x2', 'bbox_y2', 'class', 'test')
         class_names = data['class_names']
 
