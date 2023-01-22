@@ -1,2 +1,1 @@
-air+car_resnet50_4_colorjitter/model.pth
-air+car_resnet50_4_attention/model.pth
+*.pth
