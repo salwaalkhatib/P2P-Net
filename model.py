@@ -15,23 +15,27 @@ class PMG(nn.Module):
         self.topn = topn
         self.im_sz = 448
         self.pad_side = 224
+        self.num_heads = 4
         self.PR = PartsResort(self.topn, self.num_ftrs//2)
 
-        self.proposal_net = ProposalNet(self.num_ftrs)
+        self.proposal_net = ProposalNet(self.num_ftrs) # object detection head
         _, edge_anchors, _ = generate_default_anchor_maps()
         self.edge_anchors = (edge_anchors+self.pad_side).astype(np.int)
         
         # mlp for regularization
+        self.self_attn_1 = nn.MultiheadAttention(self.num_ftrs//2 * self.topn, self.num_heads)
         self.reg_mlp1 = nn.Sequential(
             nn.Linear(self.num_ftrs//2 * self.topn, self.num_ftrs//2),
             nn.ELU(inplace=True),
             nn.Linear(self.num_ftrs//2, self.num_ftrs//2)
         )
+        self.self_attn_2 = nn.MultiheadAttention(self.num_ftrs//2 * self.topn, self.num_heads)
         self.reg_mlp2 = nn.Sequential(
             nn.Linear(self.num_ftrs//2 * self.topn, self.num_ftrs//2),
             nn.ELU(inplace=True),
             nn.Linear(self.num_ftrs//2, self.num_ftrs//2)
         )
+        self.self_attn_3 = nn.MultiheadAttention(self.num_ftrs//2 * self.topn, self.num_heads)
         self.reg_mlp3 = nn.Sequential(
             nn.Linear(self.num_ftrs//2 * self.topn, self.num_ftrs//2),
             nn.ELU(inplace=True),
@@ -93,10 +97,11 @@ class PMG(nn.Module):
         )
 
     def forward(self, x, is_train=True):
-        _, _, f1, f2, f3 = self.backbone(x)
+        _, _, f1, f2, f3 = self.backbone(x) #part2pose regualrization uses these as input
 
         batch = x.shape[0]
-        rpn_score = self.proposal_net(f3.detach())
+        rpn_score = self.proposal_net(f3.detach()) # passing through fpn
+        # top n proposals
         all_cdds = [np.concatenate((x.reshape(-1, 1), 
                     self.edge_anchors.copy(),
                     np.arange(0, len(x)).reshape(-1, 1)), 
@@ -134,12 +139,15 @@ class PMG(nn.Module):
         parts_order = parts_order.unsqueeze(2).expand(batch, self.topn, self.num_ftrs//2)
 
         f1_points = torch.gather(f1_part.view(batch, self.topn, -1), dim=1, index=parts_order)
-        f1_m = self.reg_mlp1(f1_points.view(batch, -1))
+        f1_attn , _ = self.self_attn_1(f1_points.view(batch, -1),f1_points.view(batch, -1),f1_points.view(batch, -1))
+        f1_m = self.reg_mlp1(f1_attn) #part2pose regualrization uses these as input
         f2_points = torch.gather(f2_part.view(batch, self.topn, -1), dim=1, index=parts_order)
-        f2_m = self.reg_mlp2(f2_points.view(batch, -1))
+        f2_attn , _= self.self_attn_2(f2_points.view(batch, -1), f2_points.view(batch, -1), f2_points.view(batch, -1))
+        f2_m = self.reg_mlp2(f2_attn) #part2pose regualrization uses these as input
         f3_points = torch.gather(f3_part.view(batch, self.topn, -1), dim=1, index=parts_order)
-        f3_m = self.reg_mlp3(f3_points.view(batch, -1))
-
+        f3_attn, _ = self.self_attn_3(f3_points.view(batch, -1), f3_points.view(batch, -1),f3_points.view(batch, -1))
+        f3_m = self.reg_mlp3(f3_attn) #part2pose regualrization uses these as input
+ 
         # stage-wise classification
         f1 = self.conv_block1(f1).view(batch, -1)
         f2 = self.conv_block2(f2).view(batch, -1)

@@ -20,7 +20,7 @@ def train():
     parser.add_argument('--epochs', type=int, default=300, help="training epochs")
     parser.add_argument('--batch_size', type=int, default=16, help="batch size for training")
     parser.add_argument('--resume', type=str, default="", help="resume from saved model path")
-    parser.add_argument('--dataset_name', type=str, default="cub", help="dataset name")
+    parser.add_argument('--dataset_name', type=str, default="air+car", help="dataset name")
     parser.add_argument('--topn', type=int, default=4, help="parts number")
     parser.add_argument('--backbone', type=str, default="resnet50", help="backbone")
     parser.add_argument('--lr', type=float, default=2e-3, help="learning rate")
@@ -61,7 +61,7 @@ def train():
 
     ## Output
     topn = args.topn
-    exp_dir = dataset_name + '_' + args.backbone + '_' + str(topn)
+    exp_dir = dataset_name + '_' + args.backbone + '_' + str(topn) + "_attention" 
     os.makedirs(exp_dir, exist_ok=True)
 
     ## Model

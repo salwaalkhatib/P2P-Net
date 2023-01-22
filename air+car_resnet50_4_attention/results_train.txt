@@ -1,0 +1,1 @@
+Iteration 1 (train) | acc1 = 9.62798 | acc2 = 19.41125 | acc3 = 18.67531 | acc4 = 25.52832 
