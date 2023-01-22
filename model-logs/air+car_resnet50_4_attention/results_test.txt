@@ -1,2 +1,0 @@
-Iteration 1 | acc1 = 21.82170 | acc2 = 48.24160 | acc3 = 45.98206 | acc4 = 54.04431 | acc_test = 53.41129 
-Iteration 2 | acc1 = 46.71180 | acc2 = 77.38702 | acc3 = 72.70969 | acc4 = 79.30368 | acc_test = 79.89274 
