@@ -4,6 +4,13 @@ Official implementation of "[Fine-Grained Object Classification via Self-Supervi
 
 <img src="https://github.com/yangxh11/P2P-Net/blob/main/motivation.jpg" width = "600" height = "450" alt="" align=center />
 
+
+### Symlink for datasets
+Run ```ln -s /PATH/TO/ALL/DATASETS/ ./data/``` \
+This will create a ```data``` folder with symbolic link to the dataset directory that you point to. \
+Do the same for outputs in /l/users/SOMEWHERE/ to ./output
+
+
 # Preparation
 ## Benchmarks
 

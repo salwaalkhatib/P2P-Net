@@ -1,1 +1,7 @@
 *.pth
+data
+__pycache__/
+car_resnet50_4_attention
+output
+data
+.vscode
