@@ -213,6 +213,10 @@ def train():
                 save_model(net, optimizer, epoch, args, exp_dir + '/chkp_best.pth')
                 # torch.save(net.state_dict(), './' + exp_dir + '/chkp_best.pth')
                 net.to(device)
+            else:
+                net.cpu()
+                save_model(net, optimizer, epoch, args, exp_dir + '/chkp_latest.pth')
+                net.to(device)
             
             result_str = 'Iteration %d | acc1 = %.5f | acc2 = %.5f | acc3 = %.5f | acc4 = %.5f | acc_test = %.5f \n' % (epoch, acc1, acc2, acc3, acc4, acc_test)
             print(result_str)
