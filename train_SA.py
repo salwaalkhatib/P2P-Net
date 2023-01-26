@@ -61,9 +61,11 @@ def train():
     parser.add_argument('--topn', type=int, default=4, help="parts number")
     parser.add_argument('--backbone', type=str, default="resnet50", help="backbone")
     parser.add_argument('--lr', type=float, default=2e-3, help="learning rate")
+    parser.add_argument('--attn_width', type=int, default=768, help="Transformer embedding dim")
     args, _ = parser.parse_known_args()
     epochs = args.epochs
     batch_size = args.batch_size
+    attn_width = args.attn_width
 
     ## Data
     # HPC labs folder /apps/local/shared/CV703/datasets/
@@ -99,7 +101,7 @@ def train():
 
     ## Output
     topn = args.topn
-    exp_dir = 'output/' + dataset_name + '_' + args.backbone + '_' + str(topn) + "_attention" 
+    exp_dir = 'output/' + dataset_name + '_' + args.backbone + '_' + str(topn) + "_MultiLayerAttention" 
     os.makedirs(exp_dir, exist_ok=True)
     start_epoch = 1
 
@@ -111,7 +113,7 @@ def train():
         start_epoch = checkpoint['epoch']
         args = checkpoint['args']
     else:
-        net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn)
+        net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn, attn_width=attn_width)
     if torch.cuda.is_available():
         device = torch.device('cuda')
         net = net.to(device)
