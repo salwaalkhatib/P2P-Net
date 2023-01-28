@@ -100,7 +100,7 @@ def train():
 
     ## Output
     topn = args.topn
-    exp_dir = 'output/' + dataset_name + '_' + args.backbone + '_' + str(topn) + "_MultiLayerAttention" 
+    exp_dir = 'output/' + dataset_name + '_' + args.backbone + '_' + str(topn) + "_GAP-MultiLayerAttention" 
     os.makedirs(exp_dir, exist_ok=True)
     start_epoch = 1
 

@@ -101,7 +101,11 @@ class PMG(nn.Module):
         self.transformer1 = Transformer(self.attn_width, 3, self.num_heads)
         self.transformer2 = Transformer(self.attn_width, 3, self.num_heads)
         self.transformer3 = Transformer(self.attn_width, 3, self.num_heads)
-        self.reproj = nn.Linear(self.attn_width, self.num_ftrs//2)
+        self.reproj = nn.Sequential(
+            nn.Linear(self.attn_width, self.attn_width * 4),
+            nn.ELU(inplace=True),
+            nn.Linear(self.attn_width * 4, self.num_ftrs//2)
+        )
 
         # stage 1
         self.conv_block1 = nn.Sequential(
