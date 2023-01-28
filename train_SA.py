@@ -14,8 +14,7 @@ import torch.distributed as dist
 from dataset import *
 from utils_SA import *
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1'
-
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 
 
 def is_dist_avail_and_initialized():
@@ -61,7 +60,7 @@ def train():
     parser.add_argument('--topn', type=int, default=4, help="parts number")
     parser.add_argument('--backbone', type=str, default="resnet50", help="backbone")
     parser.add_argument('--lr', type=float, default=2e-3, help="learning rate")
-    parser.add_argument('--attn_width', type=int, default=768, help="Transformer embedding dim")
+    parser.add_argument('--attn_width', type=int, default=1024, help="Transformer embedding dim")
     args, _ = parser.parse_known_args()
     epochs = args.epochs
     batch_size = args.batch_size

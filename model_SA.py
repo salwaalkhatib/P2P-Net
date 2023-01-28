@@ -94,14 +94,14 @@ class PMG(nn.Module):
         # )
         
         # Projection layer from self.num_ftrs//2 to 256 (so concat of all three will give 768)
-        self.projection = nn.Parameter(torch.empty(self.num_ftrs//2, self.attn_width))
-        nn.init.normal_(self.projection, std=self.attn_width ** -0.5)
+        # self.projection = nn.Parameter(torch.empty(self.num_ftrs//2, self.attn_width))
+        # nn.init.normal_(self.projection, std=self.attn_width ** -0.5)
 
         # Transformer and reproject to 1024 dim for KL divergence
         self.transformer1 = Transformer(self.attn_width, 3, self.num_heads)
         self.transformer2 = Transformer(self.attn_width, 3, self.num_heads)
         self.transformer3 = Transformer(self.attn_width, 3, self.num_heads)
-        self.reproj = nn.Linear(self.attn_width * self.topn, self.num_ftrs//2)
+        self.reproj = nn.Linear(self.attn_width, self.num_ftrs//2)
 
         # stage 1
         self.conv_block1 = nn.Sequential(
@@ -192,21 +192,24 @@ class PMG(nn.Module):
         yp3 = self.classifier3(f3_part)
         yp4 = self.classifier_concat(torch.cat((f1_part, f2_part, f3_part), -1))
 
-        f1_points = (f1_part @ self.projection).view(batch, self.topn, -1)
-        f2_points = (f2_part @ self.projection).view(batch, self.topn, -1)
-        f3_points = (f3_part @ self.projection).view(batch, self.topn, -1)
+        f1_points = f1_part.view(batch, self.topn, -1)
+        f2_points = f2_part.view(batch, self.topn, -1)
+        f3_points = f3_part.view(batch, self.topn, -1)
         f1_points = f1_points.permute(1, 0, 2).contiguous()
         f2_points = f2_points.permute(1, 0, 2).contiguous()
         f3_points = f3_points.permute(1, 0, 2).contiguous()
         f1_att = self.transformer1(f1_points)
         f2_att = self.transformer2(f2_points)
         f3_att = self.transformer3(f3_points)
-        f1_att = f1_att.permute(1, 0, 2).contiguous().view(batch, -1)
-        f2_att = f2_att.permute(1, 0, 2).contiguous().view(batch, -1)
-        f3_att = f3_att.permute(1, 0, 2).contiguous().view(batch, -1)
-        f1_m = self.reproj(f1_att)
-        f2_m = self.reproj(f2_att)
-        f3_m = self.reproj(f3_att)
+        f1_att = f1_att.permute(1, 0, 2).contiguous()
+        f2_att = f2_att.permute(1, 0, 2).contiguous()
+        f3_att = f3_att.permute(1, 0, 2).contiguous()
+        f1_gap = f1_att.mean(dim=1)
+        f2_gap = f2_att.mean(dim=1)
+        f3_gap = f3_att.mean(dim=1)
+        f1_m = self.reproj(f1_gap)
+        f2_m = self.reproj(f2_gap)
+        f3_m = self.reproj(f3_gap)
 
         # f1_points = (f1_part @ self.projection).view(batch, self.topn, -1)
         # f1_attn , _ = self.self_attn_1(f1_points.permute(1,0,2), f1_points.permute(1,0,2), f1_points.permute(1,0,2))
