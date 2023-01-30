@@ -258,6 +258,7 @@ class AIR():
             img = transforms.Resize((550, 550))(img)
             img = transforms.RandomCrop(INPUT_SIZE, padding=8)(img)
             img = transforms.RandomHorizontalFlip()(img)
+            img = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4)(img)
             img = transforms.ToTensor()(img)
             # img = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])(img)
             img = transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])(img)

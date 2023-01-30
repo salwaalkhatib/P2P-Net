@@ -100,14 +100,20 @@ def train():
 
     ## Output
     topn = args.topn
-    exp_dir = 'output/' + dataset_name + '_' + args.backbone + '_' + str(topn) + "_GAP-MultiLayerAttention" 
+    if args.resume == "":
+        name_flag = "UrName-MultiLayerAttention"    # Use - only, no underscores
+    else:
+        name_flag = args.resume.split('/')[1].split('_')[-1]
+
+    exp_dir = 'output/' + dataset_name + '_' + args.backbone + '_' + str(topn) + '_' + name_flag 
+    print("Output directory :-", exp_dir)
     os.makedirs(exp_dir, exist_ok=True)
     start_epoch = 1
 
     ## Model
     if args.resume != "":
         checkpoint = torch.load(args.resume)
-        net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn)
+        net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn, attn_width=attn_width)
         net.load_state_dict(checkpoint['model'])
         start_epoch = checkpoint['epoch']
         args = checkpoint['args']
