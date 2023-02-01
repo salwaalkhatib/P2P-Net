@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torch.utils.data import ConcatDataset 
 from tqdm import tqdm
 import torch.distributed as dist
+import pandas as pd
 
 from dataset import *
 from utils_SA import *
@@ -54,7 +55,7 @@ def save_model(model, optimizer, epoch, args, checkpoint_path):
 def train():
     parser = argparse.ArgumentParser('FGVC', add_help=False)
     parser.add_argument('--epochs', type=int, default=300, help="training epochs")
-    parser.add_argument('--batch_size', type=int, default=16, help="batch size for training")
+    parser.add_argument('--batch_size', type=int, default=2, help="batch size for training")
     parser.add_argument('--resume', type=str, default="", help="resume from saved model path")
     parser.add_argument('--dataset_name', type=str, default="air+car", help="dataset name")
     parser.add_argument('--topn', type=int, default=4, help="parts number")
@@ -73,6 +74,7 @@ def train():
                     "dog": [120, "data/dog/"],
                     "cub": [200, "data/CUB/"], 
                     "air+car": [296, "data/fgvc-aircraft-2013b"],
+                    "foodx": [251, "data/FoodX/food_dataset"]
                     }
     dataset_name = args.dataset_name
     classes_num, data_root = data_config[dataset_name]
@@ -88,6 +90,14 @@ def train():
     elif dataset_name == 'cub':
         trainset = CUB(root=data_root, is_train=True, data_len=None)
         testset = CUB(root=data_root, is_train=False, data_len=None)
+    elif dataset_name == 'foodx':
+        train_df = pd.read_csv(f'{data_root}/annot/train_info.csv', names= ['image_name','label'])
+        train_df['path'] = train_df['image_name'].map(lambda x: os.path.join(f'{data_root}/train_set/', x))
+        val_df = pd.read_csv(f'{data_root}/annot/val_info.csv', names= ['image_name','label'])
+        val_df['path'] = val_df['image_name'].map(lambda x: os.path.join(f'{data_root}/val_set/', x))
+        
+        trainset = FOODDataset(train_df)
+        testset = FOODDataset(val_df, is_train=False)
     elif dataset_name == 'air+car':
         train_dataset_aircraft = CAR(root="data/stanford_cars", is_train=True, data_len=None)
         test_dataset_aircraft= CAR(root="data/stanford_cars", is_train=False, data_len=None)
@@ -96,12 +106,12 @@ def train():
         trainset = ConcatDataset([train_dataset_aircraft, train_dataset_cars])
         testset =  ConcatDataset([test_dataset_aircraft, test_dataset_cars])
     num_workers = 16 if torch.cuda.is_available() else 0
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers,drop_last=False, pin_memory=True)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=False, pin_memory=True)
 
     ## Output
     topn = args.topn
     if args.resume == "":
-        name_flag = "UrName-MultiLayerAttention"    # Use - only, no underscores
+        name_flag = "GAP-MultiLayerAttention"    # Use - only, no underscores
     else:
         name_flag = args.resume.split('/')[1].split('_')[-1]
 
