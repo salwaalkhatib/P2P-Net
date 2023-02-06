@@ -12,7 +12,7 @@ Run ```ln -s /PATH/TO/ALL/DATASETS/ ./data/``` \
 This will create a ```data``` folder with symbolic link to the dataset directory that you point to. \
 Do the same for outputs in /l/users/SOMEWHERE/ to ./output
 
-Copy weights from <a href="https://mbzuaiac-my.sharepoint.com/:f:/g/personal/jameel_hassan_mbzuai_ac_ae/EsJaTJ_aDf1GuuvUyhjIqCkBr6R1ydjyVaQCBd5KTQHjiQ?e=kxlIyi"> here </a>.
+Copy weights from <a href="https://mbzuaiac-my.sharepoint.com/:f:/g/personal/jameel_hassan_mbzuai_ac_ae/EsJaTJ_aDf1GuuvUyhjIqCkBr6R1ydjyVaQCBd5KTQHjiQ?e=kxlIyi"> here </a>. Runs with python 3.8 and pytorch 1.11.0.
 
 ### Running evaluation
 Run ``` python train.py --dataset_name DATASET_NAME --resume PATH/TO/SAVED/WEIGHTS --eval```
