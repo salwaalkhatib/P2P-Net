@@ -9,31 +9,73 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import ConcatDataset 
 from tqdm import tqdm
+import torch.distributed as dist
+import pandas as pd
 
 from dataset import *
 from utils import *
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0, 1, 2, 3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1,3'
+
+
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
+
+
+def get_rank():
+    if not is_dist_avail_and_initialized():
+        return 0
+    return dist.get_rank()
+
+
+def is_main_process():
+    return get_rank() == 0
+
+
+def save_on_master(*args, **kwargs):
+    if is_main_process():
+        torch.save(*args, **kwargs)
+
+
+def save_model(model, optimizer, epoch, args, checkpoint_path):
+    to_save = {
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'epoch': epoch,
+            'args': args
+        }
+
+    save_on_master(to_save, checkpoint_path)
+
 
 def train():
     parser = argparse.ArgumentParser('FGVC', add_help=False)
     parser.add_argument('--epochs', type=int, default=300, help="training epochs")
-    parser.add_argument('--batch_size', type=int, default=16, help="batch size for training")
+    parser.add_argument('--batch_size', type=int, default=2, help="batch size for training")
     parser.add_argument('--resume', type=str, default="", help="resume from saved model path")
     parser.add_argument('--dataset_name', type=str, default="air+car", help="dataset name")
     parser.add_argument('--topn', type=int, default=4, help="parts number")
     parser.add_argument('--backbone', type=str, default="resnet50", help="backbone")
     parser.add_argument('--lr', type=float, default=2e-3, help="learning rate")
+    parser.add_argument('--attn_width', type=int, default=1024, help="Transformer embedding dim")
+    parser.add_argument('--eval', action='store_true')
     args, _ = parser.parse_known_args()
     epochs = args.epochs
     batch_size = args.batch_size
+    attn_width = args.attn_width
 
     ## Data
-    data_config = {"air": [100, "/apps/local/shared/CV703/datasets/fgvc-aircraft-2013b"], 
-                    "car": [196, "/apps/local/shared/CV703/datasets/stanford_cars"], 
-                    "dog": [120, "/apps/local/shared/CV703/datasets/dog/"],
-                    "cub": [200, "/apps/local/shared/CV703/datasets/CUB/"], 
-                    "air+car": [296, "/apps/local/shared/CV703/datasets/fgvc-aircraft-2013b"],
+    # HPC labs folder /apps/local/shared/CV703/datasets/
+    data_config = {"air": [100, "data/fgvc-aircraft-2013b"], 
+                    "car": [196, "data/stanford_cars/"], 
+                    "dog": [120, "data/dog/"],
+                    "cub": [200, "data/CUB/"], 
+                    "air+car": [296, "data/fgvc-aircraft-2013b"],
+                    "foodx": [251, "data/FoodX/food_dataset"]
                     }
     dataset_name = args.dataset_name
     classes_num, data_root = data_config[dataset_name]
@@ -49,26 +91,45 @@ def train():
     elif dataset_name == 'cub':
         trainset = CUB(root=data_root, is_train=True, data_len=None)
         testset = CUB(root=data_root, is_train=False, data_len=None)
+    elif dataset_name == 'foodx':
+        train_df = pd.read_csv(f'{data_root}/annot/train_info.csv', names= ['image_name','label'])
+        train_df['path'] = train_df['image_name'].map(lambda x: os.path.join(f'{data_root}/train_set/', x))
+        val_df = pd.read_csv(f'{data_root}/annot/val_info.csv', names= ['image_name','label'])
+        val_df['path'] = val_df['image_name'].map(lambda x: os.path.join(f'{data_root}/val_set/', x))
+        
+        trainset = FOODDataset(train_df)
+        testset = FOODDataset(val_df, is_train=False)
     elif dataset_name == 'air+car':
-        train_dataset_aircraft = CAR(root="/apps/local/shared/CV703/datasets/stanford_cars", is_train=True, data_len=None)
-        test_dataset_aircraft= CAR(root="/apps/local/shared/CV703/datasets/stanford_cars", is_train=False, data_len=None)
-        train_dataset_cars = AIR(root="/apps/local/shared/CV703/datasets/fgvc-aircraft-2013b", is_train=True, data_len=None)
-        test_dataset_cars = AIR(root="/apps/local/shared/CV703/datasets/fgvc-aircraft-2013b", is_train=False, data_len=None)
+        train_dataset_aircraft = CAR(root="data/stanford_cars", is_train=True, data_len=None)
+        test_dataset_aircraft= CAR(root="data/stanford_cars", is_train=False, data_len=None)
+        train_dataset_cars = AIR(root="data/fgvc-aircraft-2013b", is_train=True, data_len=None)
+        test_dataset_cars = AIR(root="data/fgvc-aircraft-2013b", is_train=False, data_len=None)
         trainset = ConcatDataset([train_dataset_aircraft, train_dataset_cars])
         testset =  ConcatDataset([test_dataset_aircraft, test_dataset_cars])
     num_workers = 16 if torch.cuda.is_available() else 0
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers,drop_last=False, pin_memory=True)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=False, pin_memory=True)
 
     ## Output
     topn = args.topn
-    exp_dir = dataset_name + '_' + args.backbone + '_' + str(topn) + "_attention" 
+    if args.resume == "":
+        name_flag = "UrName-GAP-MultiLayerAttention"    # Use - only, no underscores
+    else:
+        name_flag = args.resume.split('/')[1].split('_')[-1]
+
+    exp_dir = 'output/' + dataset_name + '_' + args.backbone + '_' + str(topn) + '_' + name_flag 
+    print("Output directory :-", exp_dir)
     os.makedirs(exp_dir, exist_ok=True)
+    start_epoch = 1
 
     ## Model
     if args.resume != "":
-        net = torch.load(args.resume)
+        checkpoint = torch.load(args.resume)
+        net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn, attn_width=attn_width)
+        net.load_state_dict(checkpoint['model'])
+        start_epoch = checkpoint['epoch']
+        args = checkpoint['args']
     else:
-        net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn)
+        net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn, attn_width=attn_width)
     if torch.cuda.is_available():
         device = torch.device('cuda')
         net = net.to(device)
@@ -76,7 +137,6 @@ def train():
     else:
         device = torch.device('cpu')
         netp = net
-    
 
     ## Train
     CELoss = nn.CrossEntropyLoss()
@@ -85,9 +145,20 @@ def train():
         [{'params':deep_paras}, 
         {'params': net.backbone.parameters(), 'lr': args.lr/10.0}],
         lr=args.lr, momentum=0.9, weight_decay=5e-4)
+    if args.resume != '':
+        optimizer.load_state_dict(checkpoint['optimizer'])
+
+    ## Uncomment for Sanity check to see accuracy when loading checkpoint
+    print("Sanity check of accuracy of loaded model..... ;)")
+    acc1, acc2, acc3, acc4, acc_test = test(net, testset, batch_size)
+    result_str = 'Iteration | acc1 = %.5f | acc2 = %.5f | acc3 = %.5f | acc4 = %.5f | acc_test = %.5f \n' % (acc1, acc2, acc3, acc4, acc_test)
+    print(result_str)
+    if args.eval:
+        print("Evaluation complete, exiting.....")
+        exit(0)
 
     max_val_acc = 0
-    for epoch in tqdm(range(1, epochs+1)):
+    for epoch in tqdm(range(start_epoch, epochs+1)):
         print('\nEpoch: %d' % epoch)
         # update learning rate
         optimizer.param_groups[0]['lr'] = cosine_anneal_schedule(epoch, epochs, args.lr)
@@ -155,12 +226,17 @@ def train():
         with open(exp_dir + '/results_train.txt', 'a') as file:
             file.write(result_str)
 
-        if epoch < 5 or epoch % 10 == 0:
+        if epoch < 5 or epoch % 4 == 0:
             acc1, acc2, acc3, acc4, acc_test = test(net, testset, batch_size)
             if acc_test > max_val_acc:
                 max_val_acc = acc_test
                 net.cpu()
-                torch.save(net.state_dict(), './' + exp_dir + '/model.pth')
+                save_model(net, optimizer, epoch, args, exp_dir + '/chkp_best.pth')
+                # torch.save(net.state_dict(), './' + exp_dir + '/chkp_best.pth')
+                net.to(device)
+            else:
+                net.cpu()
+                save_model(net, optimizer, epoch, args, exp_dir + '/chkp_latest.pth')
                 net.to(device)
             
             result_str = 'Iteration %d | acc1 = %.5f | acc2 = %.5f | acc3 = %.5f | acc4 = %.5f | acc_test = %.5f \n' % (epoch, acc1, acc2, acc3, acc4, acc_test)

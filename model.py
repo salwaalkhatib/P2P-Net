@@ -4,10 +4,57 @@ import numpy as np
 import torch.nn.functional as F
 from anchors import generate_default_anchor_maps, hard_nms
 from clustering import PartsResort
+from collections import OrderedDict
+
+
+class ResidualAttentionBlock(nn.Module):
+    '''
+    Residual block of each attention layer with MLP
+    '''
+    def __init__(self, d_model: int, n_head: int):
+        super().__init__()
+
+        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.ln_1 = nn.LayerNorm(d_model)
+        self.mlp = nn.Sequential(OrderedDict([
+            ("c_fc", nn.Linear(d_model, d_model * 4)),
+            ("gelu", QuickGELU()),
+            ("c_proj", nn.Linear(d_model * 4, d_model))
+        ]))
+        self.ln_2 = nn.LayerNorm(d_model)
+        
+    def forward(self, x: torch.Tensor):
+        attn_output, attn_output_weights = self.attn(self.ln_1(x), self.ln_1(x), self.ln_1(x))
+            
+        x = x + attn_output
+        x_ffn = self.mlp(self.ln_2(x))
+        x = x + x_ffn
+        return x
+    
+
+class QuickGELU(nn.Module):
+    def forward(self, x: torch.Tensor):
+        return x * torch.sigmoid(1.702 * x)
+
+
+class Transformer(nn.Module):
+    '''
+    Builds the transformer based on number of layers and dimension of embeddings
+    '''
+    def __init__(self, width: int, layers: int, heads: int):
+        super().__init__()
+        self.width = width
+        self.layers = layers
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads) for _ in range(layers)])
+
+    def forward(self, x: torch.Tensor):
+        for i,block in enumerate(self.resblocks):
+            x = block(x)    
+        return x
 
 
 class PMG(nn.Module):
-    def __init__(self, model, feature_size, num_ftrs, classes_num, topn):
+    def __init__(self, model, feature_size, num_ftrs, classes_num, topn, attn_width):
         super(PMG, self).__init__()
 
         self.backbone = model
@@ -15,31 +62,49 @@ class PMG(nn.Module):
         self.topn = topn
         self.im_sz = 448
         self.pad_side = 224
-        self.num_heads = 4
-        self.PR = PartsResort(self.topn, self.num_ftrs//2)
+        self.num_heads = 8
+        self.attn_width = attn_width
+        # self.PR = PartsResort(self.topn, self.num_ftrs//2)
 
         self.proposal_net = ProposalNet(self.num_ftrs) # object detection head
         _, edge_anchors, _ = generate_default_anchor_maps()
         self.edge_anchors = (edge_anchors+self.pad_side).astype(np.int)
         
         # mlp for regularization
-        self.self_attn_1 = nn.MultiheadAttention(self.num_ftrs//2 * self.topn, self.num_heads)
-        self.reg_mlp1 = nn.Sequential(
-            nn.Linear(self.num_ftrs//2 * self.topn, self.num_ftrs//2),
+        # self.self_attn_1 = nn.MultiheadAttention(self.attn_width, self.num_heads)
+        # # Inverted bottleneck MLP
+        # self.reg_mlp1 = nn.Sequential(
+        #     nn.Linear(self.attn_width * self.topn, self.attn_width * self.topn * 4),
+        #     nn.ELU(inplace=True),
+        #     nn.Linear(self.attn_width * self.topn * 4, self.num_ftrs//2)
+        # )
+        # self.self_attn_2 = nn.MultiheadAttention(self.attn_width, self.num_heads)
+        # # Inverted bottleneck MLP
+        # self.reg_mlp2 = nn.Sequential(
+        #     nn.Linear(self.attn_width * self.topn, self.attn_width  * self.topn * 4),
+        #     nn.ELU(inplace=True),
+        #     nn.Linear(self.attn_width  * self.topn * 4, self.num_ftrs//2)
+        # )
+        # self.self_attn_3 = nn.MultiheadAttention(self.attn_width, self.num_heads)
+        # # Inverted bottleneck MLP
+        # self.reg_mlp3 = nn.Sequential(
+        #     nn.Linear(self.attn_width * self.topn, self.attn_width * self.topn * 4),
+        #     nn.ELU(inplace=True),
+        #     nn.Linear(self.attn_width * self.topn * 4, self.num_ftrs//2)
+        # )
+        
+        # Projection layer from self.num_ftrs//2 to 256 (so concat of all three will give 768)
+        # self.projection = nn.Parameter(torch.empty(self.num_ftrs//2, self.attn_width))
+        # nn.init.normal_(self.projection, std=self.attn_width ** -0.5)
+
+        # Transformer and reproject to 1024 dim for KL divergence
+        self.transformer1 = Transformer(self.attn_width, 3, self.num_heads)
+        self.transformer2 = Transformer(self.attn_width, 3, self.num_heads)
+        self.transformer3 = Transformer(self.attn_width, 3, self.num_heads)
+        self.reproj = nn.Sequential(
+            nn.Linear(self.attn_width, self.attn_width * 4),
             nn.ELU(inplace=True),
-            nn.Linear(self.num_ftrs//2, self.num_ftrs//2)
-        )
-        self.self_attn_2 = nn.MultiheadAttention(self.num_ftrs//2 * self.topn, self.num_heads)
-        self.reg_mlp2 = nn.Sequential(
-            nn.Linear(self.num_ftrs//2 * self.topn, self.num_ftrs//2),
-            nn.ELU(inplace=True),
-            nn.Linear(self.num_ftrs//2, self.num_ftrs//2)
-        )
-        self.self_attn_3 = nn.MultiheadAttention(self.num_ftrs//2 * self.topn, self.num_heads)
-        self.reg_mlp3 = nn.Sequential(
-            nn.Linear(self.num_ftrs//2 * self.topn, self.num_ftrs//2),
-            nn.ELU(inplace=True),
-            nn.Linear(self.num_ftrs//2, self.num_ftrs//2)
+            nn.Linear(self.attn_width * 4, self.num_ftrs//2)
         )
 
         # stage 1
@@ -131,22 +196,37 @@ class PMG(nn.Module):
         yp3 = self.classifier3(f3_part)
         yp4 = self.classifier_concat(torch.cat((f1_part, f2_part, f3_part), -1))
 
+        f1_points = f1_part.view(batch, self.topn, -1)
+        f2_points = f2_part.view(batch, self.topn, -1)
+        f3_points = f3_part.view(batch, self.topn, -1)
+        f1_points = f1_points.permute(1, 0, 2).contiguous()
+        f2_points = f2_points.permute(1, 0, 2).contiguous()
+        f3_points = f3_points.permute(1, 0, 2).contiguous()
+        f1_att = self.transformer1(f1_points)
+        f2_att = self.transformer2(f2_points)
+        f3_att = self.transformer3(f3_points)
+        f1_att = f1_att.permute(1, 0, 2).contiguous()
+        f2_att = f2_att.permute(1, 0, 2).contiguous()
+        f3_att = f3_att.permute(1, 0, 2).contiguous()
+        f1_gap = f1_att.mean(dim=1)
+        f2_gap = f2_att.mean(dim=1)
+        f3_gap = f3_att.mean(dim=1)
+        f1_m = self.reproj(f1_gap)
+        f2_m = self.reproj(f2_gap)
+        f3_m = self.reproj(f3_gap)
 
-        # resort parts
-        feature_points = f3_part.view(batch, self.topn, -1)
-        parts_order = self.PR.classify(feature_points.data.cpu().numpy(), is_train)
-        parts_order = torch.from_numpy(parts_order).long().to(x.device)
-        parts_order = parts_order.unsqueeze(2).expand(batch, self.topn, self.num_ftrs//2)
-
-        f1_points = torch.gather(f1_part.view(batch, self.topn, -1), dim=1, index=parts_order)
-        f1_attn , _ = self.self_attn_1(f1_points.view(batch, -1),f1_points.view(batch, -1),f1_points.view(batch, -1))
-        f1_m = self.reg_mlp1(f1_attn) #part2pose regualrization uses these as input
-        f2_points = torch.gather(f2_part.view(batch, self.topn, -1), dim=1, index=parts_order)
-        f2_attn , _= self.self_attn_2(f2_points.view(batch, -1), f2_points.view(batch, -1), f2_points.view(batch, -1))
-        f2_m = self.reg_mlp2(f2_attn) #part2pose regualrization uses these as input
-        f3_points = torch.gather(f3_part.view(batch, self.topn, -1), dim=1, index=parts_order)
-        f3_attn, _ = self.self_attn_3(f3_points.view(batch, -1), f3_points.view(batch, -1),f3_points.view(batch, -1))
-        f3_m = self.reg_mlp3(f3_attn) #part2pose regualrization uses these as input
+        # f1_points = (f1_part @ self.projection).view(batch, self.topn, -1)
+        # f1_attn , _ = self.self_attn_1(f1_points.permute(1,0,2), f1_points.permute(1,0,2), f1_points.permute(1,0,2))
+        # f1_attn = f1_attn.permute(1,0,2).reshape(batch, -1)
+        # f1_m = self.reg_mlp1(f1_attn) #part2pose regualrization uses these as input
+        # f2_points = (f2_part @ self.projection).view(batch, self.topn, -1)
+        # f2_attn , _= self.self_attn_2(f2_points.permute(1,0,2), f2_points.permute(1,0,2), f2_points.permute(1,0,2))
+        # f2_attn = f2_attn.permute(1,0,2).reshape(batch, -1)
+        # f2_m = self.reg_mlp2(f2_attn) #part2pose regualrization uses these as input
+        # f3_points = (f3_part @ self.projection).view(batch, self.topn, -1)
+        # f3_attn, _ = self.self_attn_3(f3_points.permute(1,0,2), f3_points.permute(1,0,2), f3_points.permute(1,0,2))
+        # f3_attn = f3_attn.permute(1,0,2).reshape(batch, -1)
+        # f3_m = self.reg_mlp3(f3_attn) #part2pose regualrization uses these as input
  
         # stage-wise classification
         f1 = self.conv_block1(f1).view(batch, -1)
@@ -157,7 +237,7 @@ class PMG(nn.Module):
         y3 = self.classifier3(f3)
         y4 = self.classifier_concat(torch.cat((f1, f2, f3), -1))
 
-        return y1, y2, y3, y4, yp1, yp2, yp3, yp4, top_n_prob, f1_m, f1, f2_m, f2, f3_m, f3
+        return y1, y2, y3, y4, yp1, yp2, yp3, yp4, top_n_prob, f1_m, f1, f2_m, f2, f3_m, f3       
     
     
 class BasicConv(nn.Module):
