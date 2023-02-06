@@ -15,7 +15,7 @@ import pandas as pd
 from dataset import *
 from utils import *
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1,3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,3'
 
 
 def is_dist_avail_and_initialized():
@@ -127,7 +127,9 @@ def train():
         net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn, attn_width=attn_width)
         net.load_state_dict(checkpoint['model'])
         start_epoch = checkpoint['epoch']
-        args = checkpoint['args']
+        # Crude work around for args.eval being added newly
+        if not args.eval:
+            args = checkpoint['args']
     else:
         net = load_model(backbone=args.backbone, pretrain=True, require_grad=True, classes_num=classes_num, topn=topn, attn_width=attn_width)
     if torch.cuda.is_available():

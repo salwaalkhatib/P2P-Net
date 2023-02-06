@@ -12,10 +12,12 @@ Run ```ln -s /PATH/TO/ALL/DATASETS/ ./data/``` \
 This will create a ```data``` folder with symbolic link to the dataset directory that you point to. \
 Do the same for outputs in /l/users/SOMEWHERE/ to ./output
 
-### Running evaluation
-Run ``` python train.py --dataset_name DATASET_NAME --resume PATH/TO/SAVED/WEIGHTS --eval```\
+Copy weights from <a href="https://mbzuaiac-my.sharepoint.com/:f:/g/personal/jameel_hassan_mbzuai_ac_ae/EsJaTJ_aDf1GuuvUyhjIqCkBr6R1ydjyVaQCBd5KTQHjiQ?e=kxlIyi"> here </a>.
 
-DATSET_NAMEs are air, air+car, foodx for FGVC aircrafts, Aircrafts+Stanford Cars combined and Food101 respectively. 
+### Running evaluation
+Run ``` python train.py --dataset_name DATASET_NAME --resume PATH/TO/SAVED/WEIGHTS --eval``` \
+
+DATSET_NAMEs are: air, air+car, foodx for FGVC aircrafts, Aircrafts+Stanford Cars combined and Food101 respectively. 
 
 
 # Preparation
